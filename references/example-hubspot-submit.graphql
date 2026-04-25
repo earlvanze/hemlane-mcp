@@ -1,0 +1,13 @@
+mutation HubspotFormSubmit($input: HubspotFormSubmitInput!) {
+  hubspotFormSubmit(input: $input) {
+    hubspotFormSubmission {
+      id
+      __typename
+    }
+    errors {
+      base
+      __typename
+    }
+    __typename
+  }
+}

@@ -1,0 +1,19 @@
+mutation OwnerDashboardMaintenanceMaintenanceRequestCommentCreate($input: MaintenanceRequestCommentCreateInput!) {
+  maintenanceRequestCommentCreate(input: $input) {
+    maintenanceRequestComment {
+      id
+      body
+      isHiddenFromTenants
+      createdAt
+      __typename
+    }
+    errors {
+      base
+      body
+      maintenanceRequestId
+      isHiddenFromTenants
+      __typename
+    }
+    __typename
+  }
+}

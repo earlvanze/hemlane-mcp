@@ -1,0 +1,25 @@
+mutation ODProspectiveTenantGroupMessageCreate($input: TenantGroupMessageAdd2Input!) {
+  tenantGroupMessageAdd: tenantGroupMessageAdd2(input: $input) {
+    tenantGroupMessage {
+      id
+      body
+      createdAt
+      createdByInfo {
+        id
+        name
+        email
+        type
+        __typename
+      }
+      __typename
+    }
+    errors {
+      base
+      body
+      createdByInfo
+      tenantGroup
+      __typename
+    }
+    __typename
+  }
+}

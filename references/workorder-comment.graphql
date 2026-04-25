@@ -1,0 +1,18 @@
+mutation OwnerMaintenanceWorkOrderCommentCreate($input: MaintenanceWorkOrderCommentCreateInput!) {
+  maintenanceWorkOrderCommentCreate(input: $input) {
+    maintenanceWorkOrderComment {
+      id
+      body
+      isHiddenFromTenants
+      createdAt
+      __typename
+    }
+    errors {
+      base
+      body
+      maintenanceWorkOrderId
+      __typename
+    }
+    __typename
+  }
+}
