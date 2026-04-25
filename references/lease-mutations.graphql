@@ -1,0 +1,91 @@
+# Hemlane Lease Generation Mutations
+# Extracted from lease_hemlane.com.har
+
+## ODCreateLeaseAgreement
+# Creates a new lease agreement for a tenant group
+mutation ODCreateLeaseAgreement($input: LeaseAgreementCreateInput!) {
+  leaseAgreementCreate(input: $input) {
+    error
+    leaseAgreement {
+      createdAt
+      createdByUser {
+        id
+        __typename
+      }
+      id
+      status
+      survey
+      tenantGroup {
+        id
+        __typename
+      }
+      updatedAt
+      __typename
+    }
+    __typename
+  }
+}
+
+# Variables example:
+# {
+#   "input": {
+#     "tenantGroupId": "53cf1ff2-56d7-41e5-a0bd-9d3cc2a99aab",
+#     "survey": {
+#       "additionalDisclosures": [
+#         {
+#           "body": "In consideration of the execution of the above said Lease Agreement..."
+#         }
+#       ]
+#     }
+#   }
+# }
+
+## ODCreateLeaseAgreementTemplate
+# Creates an e-sign packet from a lease agreement template
+mutation ODCreateLeaseAgreementTemplate($input: EsignDocumentCreateLeaseAgreementTemplateInput!) {
+  esignDocumentCreateLeaseAgreementTemplate(input: $input) {
+    error
+    esignPacket {
+      id
+      sourceSignable {
+        __typename
+        ... on LeaseAgreement {
+          id
+          status
+          __typename
+        }
+      }
+      __typename
+    }
+    __typename
+  }
+}
+
+# Variables example:
+# {
+#   "input": {
+#     "leaseAgreementId": "173dbf77-a481-4557-b409-c06dfa2b203c"
+#   }
+# }
+
+## ODLeaseAgreementRevertEsignPacket
+# Reverts/cancels an e-sign packet for a lease agreement
+mutation ODLeaseAgreementRevertEsignPacket($input: LeaseAgreementRevertEsignPacketInput!) {
+  leaseAgreementRevertEsignPacket(input: $input) {
+    error
+    leaseAgreement {
+      id
+      status
+      survey
+      __typename
+    }
+    __typename
+  }
+}
+
+# Variables example:
+# {
+#   "input": {
+#     "esignPacketId": "6b3ed84f-1c16-430e-a70f-a777d798e92f"
+#   }
+# }

@@ -113,3 +113,65 @@ Use these wrappers for the highest-value Hemlane workflows before dropping down 
 - `scripts/post_hemlane_maintenance_request_comment.py`
 - `scripts/send_hemlane_tenant_reply.py`
 - `scripts/capture_hemlane_auth_via_cdp.py`
+
+
+## Lease Generation Mutations
+
+Captured from `lease_hemlane.com.har`:
+
+| Operation | Type | Purpose |
+|-----------|------|---------|
+| `ODCreateLeaseAgreement` | Mutation | Create lease agreement for tenant group |
+| `ODCreateLeaseAgreementTemplate` | Mutation | Create e-sign packet from lease |
+| `ODLeaseAgreementRevertEsignPacket` | Mutation | Revert/cancel e-sign packet |
+
+### Create Lease Agreement
+
+```graphql
+mutation ODCreateLeaseAgreement($input: LeaseAgreementCreateInput!) {
+  leaseAgreementCreate(input: $input) {
+    error
+    leaseAgreement {
+      id
+      status
+      tenantGroup { id }
+      survey
+      createdAt
+    }
+  }
+}
+```
+
+Variables:
+- `tenantGroupId` (required) - The tenant group ID
+- `survey` (optional) - Additional disclosures, etc.
+
+### Create E-Sign Packet
+
+```graphql
+mutation ODCreateLeaseAgreementTemplate($input: EsignDocumentCreateLeaseAgreementTemplateInput!) {
+  esignDocumentCreateLeaseAgreementTemplate(input: $input) {
+    error
+    esignPacket {
+      id
+      sourceSignable { ... on LeaseAgreement { id status } }
+    }
+  }
+}
+```
+
+### Wrapper Script
+
+Use `scripts/create_hemlane_lease.py` for lease generation:
+
+```bash
+python3 scripts/create_hemlane_lease.py \
+  --tenant-group-id "53cf1ff2-56d7-41e5-a0bd-9d3cc2a99aab" \
+  --auth-file /tmp/hemlane-auth.json \
+  --create-esign
+```
+
+## Files Added
+
+- `references/lease-mutations.graphql` - Lease generation mutations
+- `scripts/create_hemlane_lease.py` - Lease creation wrapper
