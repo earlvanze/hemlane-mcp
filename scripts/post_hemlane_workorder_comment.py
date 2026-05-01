@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from security_guard import require_earl_write
+require_earl_write("post_hemlane_workorder_comment.py")
 import argparse, json, subprocess, sys
 from pathlib import Path
 

@@ -17,6 +17,7 @@ Saved flows consolidated into this skill:
 - requests_hemlane.com.har
 - transactions_hemlane.com.har
 - maintenance_update_hemlane.com.har
+- financials_hemlane.com.har (runtime capture at ~/Downloads/har; summarized in references/financials-har-summary.md)
 
 ## Default workflow
 1. Identify which business action is needed: referral, tenant reply, work order, requests, transactions, or maintenance update.
@@ -70,6 +71,8 @@ Hemlane MCP server provides tools for common operations via MCP protocol.
 - `post_workorder_comment` - Post work order comment
 - `post_maintenance_comment` - Post maintenance comment
 - `extract_rent_roll` - Extract rent roll data
+- `query_recurring_payment_requests` - Query active/expired recurring rent/payment requests from Financials HAR
+- `query_financials_operation` - Replay read-oriented Financials GraphQL operations from financials HAR samples, including page navigation
 - `list_graphql_operations` - List available GraphQL ops
 
 ### Configuration
@@ -175,3 +178,14 @@ python3 scripts/create_hemlane_lease.py \
 
 - `references/lease-mutations.graphql` - Lease generation mutations
 - `scripts/create_hemlane_lease.py` - Lease creation wrapper
+
+## New MCP read tools (2026-05-01)
+
+HAR-derived read wrappers added to `mcp/server.py`:
+- `query_catalog_operation` — generic read-only replay from `references/operation-catalog.json`; refuses mutations/write-like operations.
+- `get_context_values` — wraps `ODGetContextValues` for owner dashboard context/properties.
+- `get_tenant_groups` — wraps `ODTenantsAndLeasesTenantGroups` for tenant/lease views.
+- `get_maintenance_requests` — wraps `ODMaintenanceRequests`.
+- `get_transactions` — wraps `TransactionsNextCursorQuery` using the financials replay script.
+
+See `README.md` for setup, auth model, and HAR reverse-engineering workflow.

@@ -79,6 +79,8 @@ ENDPOINT_HINTS = {
     'submit-referral': 'hubspotFormSubmission',
     'work-order-comment': 'workOrderCommentCreate',
     'maintenance-comment': 'maintenanceRequestCommentCreate',
+    'financials-recurring': 'recurringPaymentRequestsCursor',
+    'financials-transactions': 'transactionsNextCursor',
 }
 
 def main():
@@ -174,6 +176,11 @@ def main():
         send('Page.navigate', {'url': 'https://www.hemlane.com/property-owners'})
         recv_until_id(msg_id, 30)
         time.sleep(3)
+    elif args.endpoint_kind in ('financials-recurring', 'financials-transactions'):
+        target_url = 'https://www.hemlane.com/dashboards/owner/financials/recurring' if args.endpoint_kind == 'financials-recurring' else 'https://www.hemlane.com/dashboards/owner/financials/transactions'
+        send('Page.navigate', {'url': target_url})
+        recv_until_id(msg_id, 30)
+        time.sleep(5)
     
     # Collect captured requests
     time.sleep(2)
@@ -188,10 +195,9 @@ def main():
         url = x.get('url', '')
         # Look for GraphQL requests to api.hemlane.com
         if 'api.hemlane.com' in url and '/graphql' in url:
-            if h.get('authorization') or h.get('x-csrf-token'):
-                headers = h
-                source = x
-                break
+            headers = h
+            source = x
+            break
     
     if not headers:
         # Try to get from Network events
@@ -200,13 +206,27 @@ def main():
             if e.get('method') == 'Network.requestWillBeSentExtraInfo':
                 h = {k.lower(): v for k, v in (e.get('params', {}).get('headers') or {}).items()}
                 url = e.get('params', {}).get('headers', {}).get(':path', '')
-                if 'graphql' in url and (h.get('authorization') or h.get('x-csrf-token')):
+                if 'graphql' in url:
                     headers = h
                     source = {'url': url, 'method': h.get(':method', 'POST')}
                     break
     
+    # Browser cookies are often omitted from fetch init headers and HAR exports.
+    cookie_header = None
+    try:
+        cid = send('Network.getCookies', {'urls': ['https://www.hemlane.com', 'https://api.hemlane.com']})
+        cookie_resp, _ = recv_until_id(cid, 10)
+        cookies = cookie_resp.get('result', {}).get('cookies', [])
+        if cookies:
+            cookie_header = '; '.join([c.get('name','') + '=' + c.get('value','') for c in cookies if c.get('name')])
+    except Exception:
+        pass
+
     if not headers:
-        raise SystemExit(f'Did not capture Hemlane auth headers for {args.endpoint_kind}')
+        headers = {}
+        source = {'url': None, 'method': 'POST'}
+    if not headers and not cookie_header:
+        raise SystemExit(f'Did not capture Hemlane auth/cookie headers for {args.endpoint_kind}')
     
     out_headers = {
         'authorization': headers.get('authorization'),
@@ -219,6 +239,8 @@ def main():
     # Include cookies if captured
     if headers.get('cookie'):
         out_headers['cookie'] = headers['cookie']
+    elif cookie_header:
+        out_headers['cookie'] = cookie_header
     
     out = {
         'targetId': target_id,

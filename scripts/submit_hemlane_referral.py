@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from security_guard import require_earl_write
+require_earl_write("submit_hemlane_referral.py")
 import argparse, json, os, subprocess, sys
 from pathlib import Path
 

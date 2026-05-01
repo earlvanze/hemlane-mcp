@@ -38,6 +38,8 @@ mutation ODCreateLeaseAgreement($input: LeaseAgreementCreateInput!) {
   }
 }
 """
+from security_guard import require_earl_write
+require_earl_write("create_hemlane_lease.py")
 
 # GraphQL mutation for creating e-sign packet from lease
 CREATE_ESIGN_MUTATION = """
