@@ -169,15 +169,64 @@ Use `scripts/create_hemlane_lease.py` for lease generation:
 
 ```bash
 python3 scripts/create_hemlane_lease.py \
-  --tenant-group-id "53cf1ff2-56d7-41e5-a0bd-9d3cc2a99aab" \
+  --tenant-group-id "<tenant-group-id>" \
   --auth-file /tmp/hemlane-auth.json \
+  --state NY \
   --create-esign
 ```
+
+For every state with a saved Hemlane template, always include the saved lease
+text before generating the draft or e-sign packet. Passing `--state XX`
+auto-loads:
+- `Dropbox/Real Estate/Resources/Lease Documents/Hemlane Lease Template - XX.txt`
+- `Dropbox/Real Estate/Resources/Lease Documents/Hemlane Lease Disclosures.txt`
+
+When the skill is used outside the canonical OpenClaw workspace, the wrapper can
+also load the same default files from
+`templates/lease-documents/`. Keep this skill-local template folder synchronized
+with the canonical resource files before pushing workflow changes.
+
+Saved state templates currently exist for AR, CO, FL, IL, NY, OH, and TN. The
+state template file must be parsed into `survey.standardClauses`. The shared
+`Hemlane Lease Disclosures.txt` file must be parsed into separate
+`survey.additionalDisclosures` entries, one entry per top-level numbered
+disclosure; do not insert the entire disclosures file as one unformatted body.
+Do not create an e-sign packet until the dry-run or live request shows both
+sections populated. If auditing a draft created before this rule, inspect
+`leaseAgreement.survey`; if `standardClauses` is missing, empty, or still using
+Hemlane defaults instead of the saved state template, or if
+`additionalDisclosures` contains one large numbered disclosure block, do not send
+it to tenants. Revert/recreate or update the draft with the state template in
+`standardClauses` and split shared disclosures in `additionalDisclosures`.
+
+Keep inserted behavioral/maintenance standard clauses in logical lease order.
+For NY, OH, and IL templates, `Drug Free Housing` belongs immediately after
+`Use of Premises`, and `Plumbing Stoppage & Drain Maintenance` belongs
+immediately after `Maintenance & Repairs`.
+
+Late fees are standardized by default: $25 on the 6th day after rent is due,
+then $5 per day, capped at 5% of monthly rent. In Hemlane survey terms, use
+`lateFeeStatus: "Pending"`, `lateFeeType: "Daily"`,
+`lateFeeMonthlyAnchor: 6`, `lateFeeAmountInCents: null`,
+`lateFeeDailyStartingAmountInCents: 2500`,
+`lateFeeDailyAmountInCents: 500`, and `lateFeeMaxAmountInCents` equal to 5%
+of `monthlyRentInCents`. Use `--no-standard-late-fee` only for a deliberate,
+documented exception.
+
+Set `refundableDepositBank` to `Thread Bank` unless the user gives a different
+deposit-holding institution.
+
+The wrapper refuses empty `survey.standardClauses` and empty
+`survey.additionalDisclosures` by default. Use `--allow-empty-standard-clauses`
+or `--allow-empty-additional-disclosures` only for a deliberate, documented
+exception.
 
 ## Files Added
 
 - `references/lease-mutations.graphql` - Lease generation mutations
 - `scripts/create_hemlane_lease.py` - Lease creation wrapper
+- `templates/lease-documents/` - saved generic lease templates and shared
+  disclosure text for AR, CO, FL, IL, NY, OH, and TN
 
 ## New MCP read tools (2026-05-01)
 
