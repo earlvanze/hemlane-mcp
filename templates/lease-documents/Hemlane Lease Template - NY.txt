@@ -419,18 +419,17 @@ Tenant will be considered in default of this Agreement if they fail to comply wi
 
 Should Tenant default under any of the terms and conditions of this Lease, Owner/Agent shall have any and all remedies available to Owner/Agent under this Lease, at law or in equity, including, without limitation, (1) the right to re-enter and repossess the Premises pursuant to applicable laws, (2) the right to recover all present and future unpaid rent, damages, costs, and attorneys’ fees, and (3) the right to recover all expenses of Owner/Agent incurred in re-entering, re-renting, cleaning and repairing the Premises. Interest will begin accruing at 18% per year on any amount due and owing to Owner/Agent from the time that any such amount first became due and payable. Tenant understands that violations of this Lease, including unauthorized occupancy, illegal activity, or disturbances, may constitute material breaches subject to legal remedies under applicable law, including termination of tenancy. Owner/Agent will proceed with legal eviction proceedings only in accordance with New York State law, including any required written notices. Owner/Agent may proceed against Tenant either for eviction or for a money judgment, or both, either at one time or one remedy at a time, in any order.
 
-59. Binding Effect
-
-The terms of this Agreement will be binding upon and benefit the Parties involved, as well as their respective legal representatives, successors, and assigns.
-
-60. Entire Agreement
-
-This agreement and any attached addenda constitute the complete and entire Agreement between Tenant and Owner/Agent. It can only be modified through a written document signed by all parties. Neither Owner/Agent nor Tenant has made any promises or representations beyond those stated in this Agreement or those implied by law. Failure of Tenant, their guests, or invitees to adhere to any term of this Agreement may result in the termination of the tenancy, with appropriate notice and legal procedures as required. Any modifications or amendments to this Lease Agreement must be made in writing and signed by the party responsible for the amendment.
-
-61. Notice of Landlord Default
+59. Notice of Landlord Default
 
 In the event of any alleged default in the obligation of Landlord under this Lease, Tenant will deliver to Landlord written notice specifying the nature of Landlord's default and Landlord will have thirty (30) days following receipt of such notice to cure such alleged default or, in the event the alleged default cannot reasonably be cured within a 30-day period, to commence action and proceed diligently to cure such alleged default.
 
-62. Covenants, Conditions, and Restrictions
+60. Covenants, Conditions, and Restrictions
 
 This Lease shall be subject to and Tenant shall comply with all recorded covenants, conditions and restrictions affecting the Premises. Tenant’s failure to comply with such covenants, conditions and restrictions shall be a default of this Lease.
+61. Binding Effect
+
+The terms of this Agreement will be binding upon and benefit the Parties involved, as well as their respective legal representatives, successors, and assigns.
+
+62. Entire Agreement
+
+This agreement and any attached addenda constitute the complete and entire Agreement between Tenant and Owner/Agent. It can only be modified through a written document signed by all parties. Neither Owner/Agent nor Tenant has made any promises or representations beyond those stated in this Agreement or those implied by law. Failure of Tenant, their guests, or invitees to adhere to any term of this Agreement may result in the termination of the tenancy, with appropriate notice and legal procedures as required. Any modifications or amendments to this Lease Agreement must be made in writing and signed by the party responsible for the amendment.

@@ -203,6 +203,9 @@ Keep inserted behavioral/maintenance standard clauses in logical lease order.
 For NY, OH, and IL templates, `Drug Free Housing` belongs immediately after
 `Use of Premises`, and `Plumbing Stoppage & Drain Maintenance` belongs
 immediately after `Maintenance & Repairs`.
+Across all saved state templates, `Notice of Landlord Default` and
+`Covenants, Conditions, and Restrictions` belong immediately after `Default`
+and before `Binding Effect`.
 
 Late fees are standardized by default: $25 on the 6th day after rent is due,
 then $5 per day, capped at 5% of monthly rent. In Hemlane survey terms, use

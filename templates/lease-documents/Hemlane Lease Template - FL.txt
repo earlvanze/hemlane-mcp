@@ -381,15 +381,22 @@ Should Tenant default under any of the terms and conditions of this Lease, Owner
 
 Pursuant to Fla. Stat. § 83.56 and other applicable Florida law, Owner/Agent may pursue possession of the Premises and/or a money judgment for legally permitted grounds after required notices and procedures are satisfied.
 
-56. Binding Effect
+56. Notice of Landlord Default
+
+In the event of any alleged default in the obligation of Landlord under this Lease, Tenant will deliver to Landlord written notice specifying the nature of Landlord's default and Landlord will have thirty (30) days following receipt of such notice to cure such alleged default or, in the event the alleged default cannot reasonably be cured within a 30-day period, to commence action and proceed diligently to cure such alleged default.
+
+57. Covenants, Conditions, and Restrictions
+
+This Lease shall be subject to and Tenant shall comply with all recorded covenants, conditions and restrictions affecting the Premises. Tenant’s failure to comply with such covenants, conditions and restrictions shall be a default of this Lease.
+58. Binding Effect
 
 The terms of this Agreement will be binding upon and benefit the Parties involved, as well as their respective legal representatives, successors, and assigns.
 
-57. Entire Agreement
+59. Entire Agreement
 
 This document represents the complete and entire Agreement between Tenant and Owner/Agent. It can only be modified through a written document signed by all parties. Neither Owner/Agent nor Tenant has made any promises or representations beyond those stated in this Agreement or those implied by law. Failure of Tenant, their guests, or invitees to adhere to any term of this Agreement may result in the termination of the tenancy, with appropriate notice and legal procedures as required. Any modifications or amendments to this Lease Agreement must be made in writing and signed by the party responsible for the amendment.
 
-58. Plumbing Stoppage & Drain Maintenance
+60. Plumbing Stoppage & Drain Maintenance
 
 Tenant(s) agrees to NOT to dispose of corrosive and greasy liquids via toilets, sinks, bathtubs, and drains. Tenant(s) should be in possession of a plunger to perform normal clearing for minor toilet clogs.
 
@@ -399,7 +406,7 @@ Paper towels, Sanitary napkins, Tampons, Condoms, Plastic wrappers, Cigarettes, 
 
 Tenant shall notify Owner/Agent of any plumbing leak or slow drainage within 24 hours to avoid additional charges. Owner/Agent shall use all reasonable efforts to remedy the plumbing problem. Violation of any of the above listed Plumbing Stoppage & Drain Maintenance provisions will constitute a material breach of the above said Lease Agreement and /or Pet Policy Agreement and a subject but not limited to the following remedies: penalties, and/or monetary restitution to Owner/Agent. Plumbing stoppage will be properly evaluated based on a type of recovered stoppage material and presented to a Tenant(s) as a proof of claimed negligence.
 
-59. Drug Free Housing
+61. Drug Free Housing
 
 Tenant(s), any member of the Tenant's household, or a guest or other person under the Tenant's control may not engage in criminal activity, including drug-related criminal activity, on or near premises. "Drug- related criminal activity" means the illegal manufacture, sale, distribution, use or possession with intent to manufacture, sell, distribute or use, of a controlled substance (as defined in section 102 of the Controlled Substances Act (21 U.S.C.802).
 
@@ -410,11 +417,3 @@ Tenant(s) or members of the household will not engage in the manufacture, sale o
 Tenant(s), any member of the Tenant's household or a guest or other person under the Tenant's control may not engage in acts of violence or threats of violence including, but not limited to, the unlawful possession or discharge of firearms on or near the premises.
 
 Tenant(s) understands and agrees that if there are any court approved search warrants issued for the above-described premises, that it will cause an automatic breach of Lease Agreement and Owner/Agent may seek eviction based upon that occurrence. It is further understood that pursuant to this paragraph no arrests or convictions need to occur prior to breach of the above said Lease Agreement. A judicial determination of probable cause to believe that some form of criminal and illegal activity has occurred will be deemed as Lease Agreement breach.
-
-60. Notice of Landlord Default
-
-In the event of any alleged default in the obligation of Landlord under this Lease, Tenant will deliver to Landlord written notice specifying the nature of Landlord's default and Landlord will have thirty (30) days following receipt of such notice to cure such alleged default or, in the event the alleged default cannot reasonably be cured within a 30-day period, to commence action and proceed diligently to cure such alleged default.
-
-61. Covenants, Conditions, and Restrictions
-
-This Lease shall be subject to and Tenant shall comply with all recorded covenants, conditions and restrictions affecting the Premises. Tenant’s failure to comply with such covenants, conditions and restrictions shall be a default of this Lease.
