@@ -1,0 +1,4 @@
+# Isolated local/offline workflow validation. Does not configure live auth.
+mcp>=1,<2
+websocket-client>=1,<2
+PyYAML>=6,<7

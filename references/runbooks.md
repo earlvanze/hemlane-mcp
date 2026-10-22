@@ -3,14 +3,17 @@
 ## Referral submit
 1. Use `references/graphql-operations.md` and locate `HubspotFormSubmit`.
 2. Reconstruct the mutation payload with fields for first name, last name, phone, email, referrer name, and referrer email.
-3. Preserve the captured `formId` from the HAR-derived sample unless a newer form capture supersedes it.
-4. Submit to `https://api.hemlane.com/graphql` with fresh browser session cookies and any CSRF/header requirements available at runtime.
-5. Validate success by checking `hubspotFormSubmission.id` and empty `errors`.
+3. Supply the currently verified `formId`, referrer name and email explicitly. The maintained wrapper builds its payload from these inputs, without captured personal values.
+4. Preview with `scripts/submit_hemlane_referral.py`. Apply an authorized exact digest with a fresh private journal and runtime credentials; MCP also requires trusted caller configuration.
+5. Independently verify `hubspotFormSubmission.id`, empty `errors` and the native submission before reporting completion. Uncertain outcomes require readback, never automatic replay.
 
 Key operation:
 - `HubspotFormSubmit`
 
 ## Tenant reply
+Use [reconciliation-and-messaging.md](reconciliation-and-messaging.md) for the
+maintained preview/apply/verify-only path. The steps below describe native contracts;
+they do not bypass account scope, journals or the read-after-write requirement.
 1. Identify the target tenant group ID from `ODTenantsAndLeasesTenantGroups` or an existing message thread.
 2. Optionally re-read context with:
    - `TGTenantGroup`
@@ -45,9 +48,13 @@ Confirmed live mutation:
 4. Re-run query with tighter filters (property, owner, due date, category) when narrowing a result set.
 5. Validate by comparing total count / next cursor / returned transaction IDs.
 
+## Payment reconciliation / adjustments / ledger communications
+
+Read [reconciliation-and-messaging.md](reconciliation-and-messaging.md).
+Never infer received money from an override or infer current balance from charge sums.
+
 ## Workflow-specific wrappers
 - `scripts/submit_hemlane_referral.py`
 - `scripts/post_hemlane_workorder_comment.py`
 - `scripts/post_hemlane_maintenance_request_comment.py`
 - `scripts/send_hemlane_tenant_reply.py`
-

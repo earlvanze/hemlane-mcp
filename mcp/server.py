@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Hemlane MCP server - wraps existing Hemlane scripts."""
 import json
+import hashlib
+import os
+import re
 import subprocess
 import sys
-import os
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -11,51 +13,34 @@ mcp = FastMCP("hemlane")
 
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 
-AUTHORIZED_DISCORD_SENDER_SHA256 = "d40800cb299a0988be92536d6ac5a7e99659ec6d9fef7b7779a8fdeb980f8da1"
-READ_CAPTURE_ENDPOINTS = {
-    "get-properties", "get-tenants", "get-transactions", "get-maintenance",
-    "financials-recurring", "financials-transactions",
+TENANT_FAILURE_STATUSES = {
+    "blocked_or_unverified", "outcome_unverified_do_not_resend",
+    "attachment_verification_required",
 }
-WRITE_CAPTURE_ENDPOINTS = {
-    "send-tenant-reply", "submit-referral", "work-order-comment", "maintenance-comment",
+TENANT_SAFE_ERRORS = {
+    "nonempty_message_and_account_property_scope_required",
+    "account_or_property_scope_mismatch", "readback_property_scope_mismatch",
+    "messages_response_incomplete", "message_pagination_incomplete",
+    "message_history_truncated_review_required", "plan_digest_mismatch",
+    "journal_exists_use_verify_only", "matching_message_already_exists_review_thread",
+    "outcome_unverified_use_verify_only_never_resend",
+    "verify_requires_auth_and_journal_without_apply", "receipt_digest_mismatch",
+    "apply_requires_auth_journal_digest_without_dry_run", "local_input_or_receipt_error",
+    "endpoint_must_be_hemlane_graphql", "receipt_symlink_refused", "redirect_refused",
+    "transport_or_response_error_outcome_unverified", "graphql_error_outcome_unverified",
 }
 
 
-def _requester_discord_id() -> str | None:
-    """Return verified caller id from runtime env, never from tool args."""
-    for key in ("OPENCLAW_DISCORD_SENDER_ID", "OPENCLAW_SENDER_ID", "DISCORD_SENDER_ID", "OPENCLAW_AUTHOR_ID", "OPENCLAW_USER_ID"):
-        val = os.environ.get(key)
-        if val:
-            return str(val)
-    for key in ("OPENCLAW_INBOUND_META", "OPENCLAW_MESSAGE_META", "OPENCLAW_REQUEST_META", "OPENCLAW_CONTEXT_JSON"):
-        raw = os.environ.get(key)
-        if not raw:
-            continue
-        try:
-            meta = json.loads(raw)
-        except Exception:
-            continue
-        for field in ("sender_id", "author_id", "user_id", "member_id", "senderId", "authorId", "userId"):
-            val = meta.get(field)
-            if val:
-                return str(val)
-    return None
-
-
-def _deny_write(tool: str) -> dict:
-    return {
-        "error": "write_blocked",
-        "tool": tool,
-        "message": "Hemlane write tools require a verified privileged caller. Current runtime caller is not verified, so this fails closed.",
-        "read_only_fallback": "Use read-only tools for reads, or have an authorized operator approve the write from Discord.",
-    }
-
-
-def _require_earl(tool: str) -> dict | None:
-    caller = _requester_discord_id()
-    if caller and __import__("hashlib").sha256(caller.encode()).hexdigest() == AUTHORIZED_DISCORD_SENDER_SHA256:
+def require_operator():
+    """Trusted stdio host supplies identity/policy; never accept identity in tool args."""
+    caller = os.environ.get("HEMLANE_CALLER_ID", "")
+    allowed = {value.strip().lower() for value in
+               os.environ.get("HEMLANE_ALLOWED_CALLER_SHA256", "").split(",") if value.strip()}
+    if caller and hashlib.sha256(caller.encode()).hexdigest() in allowed:
         return None
-    return _deny_write(tool)
+    return {"error": "write_blocked_unverified_operator",
+            "nextStep": "Configure trusted runtime caller identity and allowed hashes; preview remains available."}
+
 
 def run_script(script_name: str, args: list = None) -> dict:
     """Run a Hemlane script and return the result."""
@@ -63,16 +48,55 @@ def run_script(script_name: str, args: list = None) -> dict:
     if not script_path.exists():
         return {"error": f"Script not found: {script_name}"}
     
-    cmd = ["python3", str(script_path)] + (args or [])
+    cmd = [sys.executable, str(script_path)] + (args or [])
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
-            return {"error": result.stderr, "stdout": result.stdout}
-        return {"success": True, "output": result.stdout}
+            # Old scripts can put credentials/tenant data into exception text.
+            failure = {"success": False, "error": "script_failed_or_outcome_unverified",
+                    "exitCode": result.returncode,
+                    "nextStep": "Inspect the private receipt; verify server state before any retry."}
+            if script_name == "send_hemlane_tenant_reply.py":
+                try:
+                    data = json.loads(result.stdout)
+                except ValueError:
+                    data = None
+                if (isinstance(data, dict) and isinstance(data.get("status"), str)
+                        and data["status"] in TENANT_FAILURE_STATUSES):
+                    safe = {"status": data["status"]}
+                    for key, pattern in (("digest", r"[0-9a-f]{64}"),
+                                         ("messageId", r"[A-Za-z0-9_:+/=-]{1,256}")):
+                        value = data.get(key)
+                        if isinstance(value, str) and re.fullmatch(pattern, value):
+                            safe[key] = value
+                    if isinstance(data.get("error"), str) and data["error"] in TENANT_SAFE_ERRORS:
+                        safe["error"] = data["error"]
+                    failure.update(result=safe, status=safe["status"], verified=False)
+            return failure
+        try:
+            data = json.loads(result.stdout)
+        except ValueError:
+            return {"success": False, "error": "unstructured_script_output_withheld"}
+        output = {"success": True, "result": data}
+        if isinstance(data, dict) and data.get("status"):
+            output["status"] = data["status"]
+            output["verified"] = data["status"] == "sent_verified"
+        return output
     except subprocess.TimeoutExpired:
-        return {"error": "Script timed out"}
-    except Exception as e:
-        return {"error": str(e)}
+        return {"success": False, "error": "timeout_outcome_unverified_do_not_retry"}
+    except Exception:
+        return {"success": False, "error": "local_script_execution_error"}
+
+
+def mutation_options(apply, confirm_digest, journal):
+    """Preview unless an exact reviewed plan and fresh receipt are supplied."""
+    if not apply:
+        return []
+    if require_operator():
+        raise ValueError("write_blocked_unverified_operator")
+    if not confirm_digest or not journal:
+        raise ValueError("apply_requires_digest_and_journal")
+    return ["--apply", "--confirm-digest", confirm_digest, "--journal", journal]
 
 @mcp.tool()
 def capture_auth(endpoint_kind: str = "get-properties", out_file: str = None) -> dict:
@@ -82,46 +106,57 @@ def capture_auth(endpoint_kind: str = "get-properties", out_file: str = None) ->
         endpoint_kind: One of get-properties, get-tenants, get-transactions, 
                        get-maintenance, send-tenant-reply, submit-referral,
                        work-order-comment, maintenance-comment
-        out_file: Optional file path to save captured headers
+        out_file: Required new private file path to save captured headers
     
     Returns:
-        dict with targetId, capturedUrl, capturedMethod, headers
+        Redacted capture metadata; credentials stay in the required private file.
     """
-    if endpoint_kind in WRITE_CAPTURE_ENDPOINTS:
-        denied = _require_earl("capture_auth:" + endpoint_kind)
-        if denied:
-            return denied
-    elif endpoint_kind not in READ_CAPTURE_ENDPOINTS:
-        return {"error": "endpoint_kind not allowed", "allowed_read": sorted(READ_CAPTURE_ENDPOINTS), "allowed_write_for_earl_only": sorted(WRITE_CAPTURE_ENDPOINTS)}
-    args = ["--endpoint-kind", endpoint_kind]
-    if out_file:
-        args.extend(["--out-file", out_file])
+    denied = require_operator()
+    if denied:
+        return denied
+    if not out_file:
+        return {"error": "new_private_out_file_required"}
+    args = ["--endpoint-kind", endpoint_kind, "--out-file", out_file]
     return run_script("capture_hemlane_auth_via_cdp.py", args)
 
 @mcp.tool()
-def send_tenant_reply(tenant_group_id: str, message: str, auth_file: str) -> dict:
-    """Send a tenant reply via Hemlane GraphQL API.
-    
-    Args:
-        tenant_group_id: The tenant group ID to message
-        message: The message content
-        auth_file: Path to captured auth headers JSON file
-    
-    Returns:
-        dict with success/error status
+def send_tenant_reply(tenant_group_id: str, message: str, auth_file: str,
+                      expected_user_id: str = None, property_id: str = None,
+                      apply: bool = False, confirm_digest: str = None,
+                      journal: str = None, notify_immediately: bool = True) -> dict:
+    """Preview a tenant-visible message. Apply only an authorized exact digest;
+    account/property scope and new journal are mandatory. Never retry uncertain sends.
     """
-    denied = _require_earl("send_tenant_reply")
-    if denied:
-        return denied
-    # Auth is supplied to replay_hemlane_graphql.py via env or its own runtime auth handling.
+    if not expected_user_id or not property_id:
+        return {"error": "expected_user_id_and_property_id_required"}
+    try:
+        options = mutation_options(apply, confirm_digest, journal)
+    except ValueError as exc:
+        return {"error": str(exc)}
     return run_script("send_hemlane_tenant_reply.py", [
         "--tenant-group-id", tenant_group_id,
-        "--body", message
-    ])
+        "--body", message, "--expected-user-id", expected_user_id,
+        "--property-id", property_id, "--auth-file", auth_file,
+        "--notify-immediately" if notify_immediately else "--no-notify-immediately",
+    ] + options)
+
+
+@mcp.tool()
+def verify_tenant_reply(auth_file: str, journal: str) -> dict:
+    """Read-only recovery of an interrupted send. Never submits another message."""
+    return run_script("send_hemlane_tenant_reply.py", ["--auth-file", auth_file,
+                      "--journal", journal, "--verify-only"])
+
+
+@mcp.tool()
+def plan_payment_reconciliation(input_file: str) -> dict:
+    """Offline verified-bank allocation and responsible-party adjustment plan. No live financial writes."""
+    return run_script("reconcile_payment_allocations.py", ["--input", input_file])
 
 @mcp.tool()
 def submit_referral(first_name: str, last_name: str, email: str, phone: str, 
-                     referrer_name: str, referrer_email: str, auth_file: str) -> dict:
+                     referrer_name: str, referrer_email: str, auth_file: str, form_id: str,
+                     apply: bool = False, confirm_digest: str = None, journal: str = None) -> dict:
     """Submit a referral via Hemlane HubSpot form.
     
     Args:
@@ -136,22 +171,25 @@ def submit_referral(first_name: str, last_name: str, email: str, phone: str,
     Returns:
         dict with success/error status
     """
-    denied = _require_earl("submit_referral")
-    if denied:
-        return denied
+    try:
+        options = mutation_options(apply, confirm_digest, journal)
+    except ValueError as exc:
+        return {"error": str(exc)}
     return run_script("submit_hemlane_referral.py", [
         "--first-name", first_name,
         "--last-name", last_name,
         "--email", email,
         "--phone", phone,
         "--referrer-name", referrer_name,
-        "--referrer-email", referrer_email
-    ])
+        "--referrer-email", referrer_email, "--form-id", form_id,
+        "--auth-file", auth_file
+    ] + options)
 
 @mcp.tool()
 def post_workorder_comment(work_order_id: str, comment: str, auth_file: str,
                            hidden_from_tenants: bool = False, 
-                           hidden_from_owners: bool = False) -> dict:
+                           hidden_from_owners: bool = False, apply: bool = False,
+                           confirm_digest: str = None, journal: str = None) -> dict:
     """Post a comment on a work order.
     
     Args:
@@ -164,23 +202,26 @@ def post_workorder_comment(work_order_id: str, comment: str, auth_file: str,
     Returns:
         dict with success/error status
     """
-    denied = _require_earl("post_workorder_comment")
-    if denied:
-        return denied
+    if hidden_from_owners:
+        return {"error": "owner_visibility_not_supported_by_verified_workorder_contract"}
+    try:
+        options = mutation_options(apply, confirm_digest, journal)
+    except ValueError as exc:
+        return {"error": str(exc)}
     args = [
         "--workorder-id", work_order_id,
-        "--body", comment
+        "--body", comment,
+        "--auth-file", auth_file
     ]
     if hidden_from_tenants:
         args.append("--hide-from-tenants")
-    if hidden_from_owners:
-        args.append("--hide-from-owners")
-    return run_script("post_hemlane_workorder_comment.py", args)
+    return run_script("post_hemlane_workorder_comment.py", args + options)
 
 @mcp.tool()
 def post_maintenance_comment(request_id: str, comment: str, auth_file: str,
                              hidden_from_tenants: bool = False,
-                             hidden_from_owners: bool = False) -> dict:
+                             hidden_from_owners: bool = False, apply: bool = False,
+                             confirm_digest: str = None, journal: str = None) -> dict:
     """Post a comment on a maintenance request.
     
     Args:
@@ -193,18 +234,20 @@ def post_maintenance_comment(request_id: str, comment: str, auth_file: str,
     Returns:
         dict with success/error status
     """
-    denied = _require_earl("post_maintenance_comment")
-    if denied:
-        return denied
+    try:
+        options = mutation_options(apply, confirm_digest, journal)
+    except ValueError as exc:
+        return {"error": str(exc)}
     args = [
         "--request-id", request_id,
-        "--body", comment
+        "--body", comment,
+        "--auth-file", auth_file
     ]
     if hidden_from_tenants:
         args.append("--hide-from-tenants")
     if hidden_from_owners:
         args.append("--hide-from-owners")
-    return run_script("post_hemlane_maintenance_request_comment.py", args)
+    return run_script("post_hemlane_maintenance_request_comment.py", args + options)
 
 @mcp.tool()
 def extract_rent_roll(property_id: str, auth_file: str) -> dict:
@@ -217,10 +260,8 @@ def extract_rent_roll(property_id: str, auth_file: str) -> dict:
     Returns:
         dict with rent roll data
     """
-    return run_script("extract_rent_roll.py", [
-        "--property-id", property_id,
-        "--auth-file", auth_file
-    ])
+    return {"error": "rent_roll_contract_unverified",
+            "nextStep": "Use native paginated tenant/lease queries; the historical extractor is not a verified rent roll."}
 
 @mcp.tool()
 def query_recurring_payment_requests(auth_file: str, search: str = None, property_id: str = None,
@@ -230,7 +271,7 @@ def query_recurring_payment_requests(auth_file: str, search: str = None, propert
 
     Args:
         auth_file: Path to captured auth headers JSON file
-        search: Optional text filter across property/unit/tenant/request fields, e.g. "1518 Dille 1520"
+        search: Optional text filter across property/unit/tenant/request fields
         property_id: Optional Hemlane property ID filter
         property_unit_id: Optional Hemlane property unit ID filter
         status: Recurring request status, defaults to Active
@@ -253,7 +294,7 @@ def query_recurring_payment_requests(auth_file: str, search: str = None, propert
     result = run_script("query_recurring_payment_requests.py", args)
     if result.get("success"):
         try:
-            return json.loads(result.get("output") or "{}")
+            return result["result"]
         except Exception:
             return result
     return result
@@ -279,7 +320,7 @@ def query_financials_operation(auth_file: str, operation_name: str, variables_js
     result = run_script("query_financials_operation.py", args)
     if result.get("success"):
         try:
-            return json.loads(result.get("output") or "{}")
+            return result["result"]
         except Exception:
             return result
     return result
@@ -287,7 +328,7 @@ def query_financials_operation(auth_file: str, operation_name: str, variables_js
 def _json_output(result: dict) -> dict:
     if result.get("success"):
         try:
-            return json.loads(result.get("output") or "{}")
+            return result["result"]
         except Exception:
             return result
     return result
