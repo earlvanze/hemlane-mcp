@@ -64,10 +64,11 @@ def verify_receipt(headers, receipt, journal, call=graphql):
                and (not receipt.get("messageId") or m.get("id") == receipt["messageId"])
                and (m.get("createdByInfo") or {}).get("id") == plan["scope"]["userId"]
                and all(m.get(flag) is False for flag in ("isOwnerPrivate", "isAdminOnly", "isSystem"))]
-    if plan["payload"]["variables"]["input"].get("attachmentUrl"):
-        receipt["status"] = "attachment_verification_required"
-    elif len(matches) == 1:
-        receipt.update(status="sent_verified", messageId=matches[0]["id"])
+    if len(matches) == 1:
+        status = ("attachment_verification_required"
+                  if plan["payload"]["variables"]["input"].get("attachmentUrl")
+                  else "sent_verified")
+        receipt.update(status=status, messageId=matches[0]["id"])
     else:
         receipt["status"] = "outcome_unverified_do_not_resend"
     private_json(journal, receipt)

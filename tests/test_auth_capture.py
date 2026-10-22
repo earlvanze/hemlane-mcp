@@ -131,7 +131,12 @@ class CaptureBoundaryTests(unittest.TestCase):
             def settimeout(self, timeout):
                 pass
             def send(self, body):
-                self.sent.append(json.loads(body))
+                command = json.loads(body)
+                self.sent.append(command)
+                if command['method'] == 'Network.getCookies':
+                    self.messages.append({'id': command['id'], 'result': {'cookies': [
+                        {'domain': '.hemlane.com', 'name': 'session', 'value': 'cookie-fixture'},
+                        {'domain': 'other.invalid', 'name': 'unrelated', 'value': 'excluded'}]}})
             def recv(self):
                 if self.messages:
                     return json.dumps(self.messages.pop(0))
@@ -155,7 +160,10 @@ class CaptureBoundaryTests(unittest.TestCase):
             self.assertNotIn('synthetic-only', json.dumps(result))
             self.assertNotIn('headers', result)
             self.assertEqual(json.loads(Path(args.out_file).read_text())['authorization'], 'synthetic-only')
-            self.assertEqual([message['method'] for message in socket.sent], ['Network.enable', 'Page.reload'])
+            self.assertEqual(json.loads(Path(args.out_file).read_text())['cookie'], 'session=cookie-fixture')
+            self.assertEqual(socket.sent[-1]['params'], {'urls': [capture.API_URL]})
+            self.assertEqual([message['method'] for message in socket.sent],
+                             ['Network.enable', 'Page.reload', 'Network.getCookies'])
             self.assertTrue(socket.closed)
 
 

@@ -3,6 +3,7 @@
 import json
 import hashlib
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,23 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("hemlane")
 
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
+
+TENANT_FAILURE_STATUSES = {
+    "blocked_or_unverified", "outcome_unverified_do_not_resend",
+    "attachment_verification_required",
+}
+TENANT_SAFE_ERRORS = {
+    "nonempty_message_and_account_property_scope_required",
+    "account_or_property_scope_mismatch", "readback_property_scope_mismatch",
+    "messages_response_incomplete", "message_pagination_incomplete",
+    "message_history_truncated_review_required", "plan_digest_mismatch",
+    "journal_exists_use_verify_only", "matching_message_already_exists_review_thread",
+    "outcome_unverified_use_verify_only_never_resend",
+    "verify_requires_auth_and_journal_without_apply", "receipt_digest_mismatch",
+    "apply_requires_auth_journal_digest_without_dry_run", "local_input_or_receipt_error",
+    "endpoint_must_be_hemlane_graphql", "receipt_symlink_refused", "redirect_refused",
+    "transport_or_response_error_outcome_unverified", "graphql_error_outcome_unverified",
+}
 
 
 def require_operator():
@@ -35,9 +53,26 @@ def run_script(script_name: str, args: list = None) -> dict:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
             # Old scripts can put credentials/tenant data into exception text.
-            return {"success": False, "error": "script_failed_or_outcome_unverified",
+            failure = {"success": False, "error": "script_failed_or_outcome_unverified",
                     "exitCode": result.returncode,
                     "nextStep": "Inspect the private receipt; verify server state before any retry."}
+            if script_name == "send_hemlane_tenant_reply.py":
+                try:
+                    data = json.loads(result.stdout)
+                except ValueError:
+                    data = None
+                if (isinstance(data, dict) and isinstance(data.get("status"), str)
+                        and data["status"] in TENANT_FAILURE_STATUSES):
+                    safe = {"status": data["status"]}
+                    for key, pattern in (("digest", r"[0-9a-f]{64}"),
+                                         ("messageId", r"[A-Za-z0-9_:+/=-]{1,256}")):
+                        value = data.get(key)
+                        if isinstance(value, str) and re.fullmatch(pattern, value):
+                            safe[key] = value
+                    if isinstance(data.get("error"), str) and data["error"] in TENANT_SAFE_ERRORS:
+                        safe["error"] = data["error"]
+                    failure.update(result=safe, status=safe["status"], verified=False)
+            return failure
         try:
             data = json.loads(result.stdout)
         except ValueError:

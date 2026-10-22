@@ -87,7 +87,6 @@ def reconcile(data):
                      "externalPaidCents": external[month], "responsibleChargeCents": charge,
                      "responsiblePaidCents": nonnegative(p["responsiblePaid"]),
                      "existingResponsibleChargeCents": existing_charge,
-                     "existingRegularUnpaidOrCreditCents": existing_charge - nonnegative(p["responsiblePaid"]),
                      "shortageOrCreditCents": shortage,
                      "trueUpContributionCents": unbilled_delta if p["treatment"] == "true_up" else 0})
     plan = {"version": 1, "scope": scope, "rows": rows, "trueUpCents": true_up,

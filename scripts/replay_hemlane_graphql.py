@@ -113,10 +113,12 @@ def main():
     if is_mutation:
         if not args.journal or args.confirm_digest != plan_digest:
             raise SafetyError('mutation_requires_new_journal_and_exact_preview_digest')
+    # Local credential errors cannot leave a journal suggesting a request was sent.
+    headers = build_headers(args)
+    if is_mutation:
         # Receipt survives timeout/interruption; reusing its path refuses replay.
         private_json(args.journal, {'status': 'attempting_do_not_replay',
                                    'digest': plan_digest, 'plan': plan}, exclusive=True)
-    headers = build_headers(args)
     try:
         data = graphql(headers, payload, args.endpoint)
         if is_mutation:

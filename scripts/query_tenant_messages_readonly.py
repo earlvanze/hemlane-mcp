@@ -169,7 +169,7 @@ def main() -> None:
     sub = ap.add_subparsers(dest="command", required=True)
     groups = sub.add_parser("groups")
     groups.add_argument("--property-id", required=True)
-    groups.add_argument("--status", action="append", default=["Active"])
+    groups.add_argument("--status", action="append")
     groups.add_argument("--limit", type=int, default=50)
     groups.add_argument("--max-pages", type=int, default=5)
     messages = sub.add_parser("messages")
@@ -189,7 +189,7 @@ def main() -> None:
     if args.command == "properties":
         result = list_properties(headers, args.search)
     elif args.command == "groups":
-        result = list_groups(headers, args.property_id, args.status, max(1, min(args.limit, 100)), max(1, min(args.max_pages, 10)))
+        result = list_groups(headers, args.property_id, args.status or ["Active"], max(1, min(args.limit, 100)), max(1, min(args.max_pages, 10)))
     else:
         result = list_messages(headers, args.tenant_group_id, parse_time(args.since),
                                max(1, min(args.first, 100)), max(1, min(args.max_pages, 10)))

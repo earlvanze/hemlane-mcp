@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import hemlane_safety as safety
 import replay_hemlane_graphql as replay
 import send_hemlane_tenant_reply as sender
+import query_tenant_messages_readonly as reader
 from reconcile_payment_allocations import cents, reconcile
 
 
@@ -105,6 +106,31 @@ class TransportTests(unittest.TestCase):
                 replay.main()
         network.assert_not_called()
 
+    def test_missing_auth_cannot_leave_attempting_journal(self):
+        query = 'mutation M { change {id} }'
+        plan = {'endpoint': replay.DEFAULT_ENDPOINT, 'payload': {'query': query, 'variables': {}}}
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / 'journal.json'
+            args = ['replay', '--query', query, '--apply', '--journal', str(journal),
+                    '--confirm-digest', safety.digest(plan), '--auth-file', str(Path(directory) / 'missing')]
+            with patch.object(sys, 'argv', args), patch.object(replay, 'graphql') as network:
+                with self.assertRaises(FileNotFoundError):
+                    replay.main()
+            self.assertFalse(journal.exists())
+            network.assert_not_called()
+
+
+class ReadFilterTests(unittest.TestCase):
+    def test_explicit_statuses_replace_default(self):
+        for flags, expected in (([], ['Active']), (['--status', 'Inactive'], ['Inactive']),
+                                (['--status', 'Inactive', '--status', 'Terminated'], ['Inactive', 'Terminated'])):
+            args = ['reader', '--auth-file', '/unused', 'groups', '--property-id', 'property'] + flags
+            with self.subTest(flags=flags), patch.object(sys, 'argv', args), \
+                 patch.object(reader, 'load_headers', return_value={}), \
+                 patch.object(reader, 'list_groups', return_value={}) as groups, redirect_stdout(io.StringIO()):
+                reader.main()
+            self.assertEqual(groups.call_args.args[2], expected)
+
 
 class SendTests(unittest.TestCase):
     def setUp(self):
@@ -172,6 +198,24 @@ class SendTests(unittest.TestCase):
             sender.send_once({}, self.plan, safety.digest(self.plan), self.journal, incomplete)
         self.assertEqual(api.mutations, 0)
 
+    def test_attachment_review_requires_exactly_one_qualified_message(self):
+        plan = sender.plan_message('tenancy', 'Synthetic attachment.', 'owner', 'property',
+                                   attachment_url='https://example.invalid/ledger.pdf')
+        message = {'id': 'attachment-message', 'body': 'Synthetic attachment.',
+                   'createdByInfo': {'id': 'owner'}, 'isOwnerPrivate': False,
+                   'isAdminOnly': False, 'isSystem': False}
+        cases = [([], 'outcome_unverified_do_not_resend'),
+                 ([message], 'attachment_verification_required'),
+                 ([message, {**message, 'id': 'second'}], 'outcome_unverified_do_not_resend'),
+                 ([{**message, 'isOwnerPrivate': True}], 'outcome_unverified_do_not_resend')]
+        for messages, expected in cases:
+            receipt = {'plan': plan, 'digest': safety.digest(plan), 'baselineIds': []}
+            with self.subTest(count=len(messages), expected=expected):
+                result = sender.verify_receipt({}, receipt, self.journal, FakeAPI(messages))
+                self.assertEqual(result['status'], expected)
+                if expected == 'attachment_verification_required':
+                    self.assertEqual(result['messageId'], 'attachment-message')
+
 
 def evidence():
     months = [f'2030-{i:02}' for i in range(1, 13)] + ['2031-01']
@@ -204,6 +248,7 @@ class ReconciliationTests(unittest.TestCase):
         plan = reconcile(data)
         self.assertEqual(plan['rows'][0]['shortageOrCreditCents'], 20000)
         self.assertEqual(plan['rows'][0]['trueUpContributionCents'], 0)
+        self.assertNotIn('existingRegularUnpaidOrCreditCents', plan['rows'][0])
         self.assertEqual(plan['trueUpCents'], 42500)
 
     def test_overbilled_credit_is_signed(self):
@@ -309,6 +354,27 @@ class MCPTests(unittest.TestCase):
             out = self.server.run_script('send_hemlane_tenant_reply.py')
         self.assertNotIn('fake-secret', json.dumps(out))
         self.assertFalse(out['success'])
+
+    def test_nonzero_tenant_result_preserves_only_safe_recovery_fields(self):
+        for status in ('attachment_verification_required', 'outcome_unverified_do_not_resend',
+                       'blocked_or_unverified'):
+            data = {'status': status, 'digest': 'a' * 64, 'messageId': 'message-example',
+                    'body': 'private-message', 'error': 'private-error'}
+            result = subprocess.CompletedProcess([], 2, json.dumps(data), 'private-stderr')
+            with self.subTest(status=status), patch.object(self.server.subprocess, 'run', return_value=result):
+                out = self.server.run_script('send_hemlane_tenant_reply.py')
+            self.assertFalse(out['success'])
+            self.assertFalse(out['verified'])
+            self.assertEqual(out['result'], {'status': status, 'digest': 'a' * 64,
+                                            'messageId': 'message-example'})
+            self.assertNotIn('private-', json.dumps(out))
+        data = {'status': 'blocked_or_unverified', 'error': 'journal_exists_use_verify_only'}
+        result = subprocess.CompletedProcess([], 2, json.dumps(data), '')
+        with patch.object(self.server.subprocess, 'run', return_value=result):
+            out = self.server.run_script('send_hemlane_tenant_reply.py')
+            self.assertEqual(out['result']['error'], 'journal_exists_use_verify_only')
+            other = self.server.run_script('replay_hemlane_graphql.py')
+            self.assertNotIn('result', other)
 
     def test_unverified_rent_roll_and_unsupported_visibility_fail_closed(self):
         with patch.object(self.server, 'run_script') as run:

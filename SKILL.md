@@ -58,6 +58,10 @@ tabs. Capture requires an existing Hemlane UI tab and a new private `--out-file`
 existing files/symlinks are refused and stdout contains metadata only. Remove runtime
 credentials after use.
 
+Restrict CDP access to the trusted host or an authenticated private bridge. Use HTTPS
+when traffic crosses an untrusted network; explicit HTTP configuration supports
+isolated container bridges as well as loopback deployments.
+
 ## MCP deployment and caller policy
 
 Run `mcp/server.py` over stdio using the deployment's Python interpreter and absolute

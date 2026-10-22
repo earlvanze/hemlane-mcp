@@ -56,7 +56,9 @@ has one treatment: `true_up`, `correct_regular`, or `exclude`.
 adjustments and excluding separate bookkeeping mirrors. New adjustment = corrected
 responsibility minus existing billed charge. Existing unpaid amounts stay on their
 original requests. `shortageOrCreditCents` separately describes responsibility minus
-actual receipts. Credits stay signed; a negative result requires credit handling,
+actual receipts for the period; it does not establish the balance of a specific
+native request. Read native requests to establish outstanding balances or credits.
+Credits stay signed; a negative result requires credit handling,
 not a guessed charge/refund. External receipts exceeding the charge require separate
 credit review. Exclude unverified periods.
 

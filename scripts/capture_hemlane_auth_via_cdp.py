@@ -178,12 +178,12 @@ def capture(args):
                 pass
         ws.settimeout(20)
         headers, source = select_captured_auth(events)
-        if not headers:
+        if not (headers or {}).get('cookie'):
             cookies = command('Network.getCookies', {'urls': [API_URL]}).get('cookies', [])
             cookie = scoped_cookie_header(cookies)
             if cookie:
-                headers = {'cookie': cookie}
-                source = {'url': API_URL, 'method': 'POST'}
+                headers = {**(headers or {}), 'cookie': cookie}
+                source = source or {'url': API_URL, 'method': 'POST'}
         if not headers:
             raise ValueError('No API-scoped Hemlane credentials captured')
         headers.setdefault('content-type', 'application/json')
