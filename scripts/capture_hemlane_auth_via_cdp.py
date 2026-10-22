@@ -1,259 +1,219 @@
 #!/usr/bin/env python3
-"""Capture live Hemlane signed auth headers from direct Brave CDP."""
-import argparse, json, time, websocket
+"""Capture Hemlane credentials into a private file, never standard output.
+
+Attach to the existing canonical Chrome bridge. No browser launch, arbitrary
+tab navigation, page credential hooks, or unrelated-domain cookie capture.
+"""
+import argparse
+import json
+import os
+import stat
+import time
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
+from urllib.request import urlopen
 
-def get_tabs():
-    """Get all CDP tabs from Brave."""
-    import urllib.request
-    resp = urllib.request.urlopen('http://127.0.0.1:19222/json')
-    return json.loads(resp.read().decode())
-
-def ensure_hemlane_cdp_context(close_extras=False):
-    """Find or create an authenticated Hemlane tab."""
-    tabs = get_tabs()
-    hemlane_tabs = [t for t in tabs if 'hemlane.com' in t.get('url', '')]
-    
-    if hemlane_tabs:
-        # Prefer PM app tabs
-        pm_tabs = [t for t in hemlane_tabs if '/property-owners' in t.get('url', '') or '/maintenance' in t.get('url', '')]
-        if pm_tabs:
-            return {'targetId': pm_tabs[0]['id']}
-        return {'targetId': hemlane_tabs[0]['id']}
-    
-    # No Hemlane tab - need to create one
-    ws = websocket.WebSocket()
-    # Find a blank page or create one
-    blank = next((t for t in tabs if 'about:blank' in t.get('url', '')), None)
-    if blank:
-        target_id = blank['id']
-        wsurl = blank['webSocketDebuggerUrl']
-    else:
-        # Use first tab to navigate
-        target_id = tabs[0]['id']
-        wsurl = next(t['webSocketDebuggerUrl'] for t in tabs if t['id'] == target_id)
-    
-    ws.connect(wsurl, timeout=20, origin=None, suppress_origin=True)
-    msg_id = 0
-    
-    def send(method, params=None):
-        nonlocal msg_id
-        msg_id += 1
-        ws.send(json.dumps({'id': msg_id, 'method': method, 'params': params or {}}))
-        return msg_id
-    
-    def recv_until_id(cid, timeout=20):
-        end = time.time() + timeout
-        while time.time() < end:
-            obj = json.loads(ws.recv())
-            if obj.get('id') == cid:
-                return obj
-        raise TimeoutError(f'timed out waiting for {cid}')
-    
-    send('Page.navigate', {'url': 'https://www.hemlane.com/login'})
-    recv_until_id(msg_id, 30)
-    ws.close()
-    
-    # Re-fetch tabs
-    time.sleep(2)
-    tabs = get_tabs()
-    hemlane_tabs = [t for t in tabs if 'hemlane.com' in t.get('url', '')]
-    if hemlane_tabs:
-        return {'targetId': hemlane_tabs[0]['id']}
-    
-    raise SystemExit('No Hemlane tab available and navigation failed')
-
-def connect_ws(target_id):
-    tabs = get_tabs()
-    wsurl = next(t['webSocketDebuggerUrl'] for t in tabs if t['id'] == target_id)
-    ws = websocket.WebSocket()
-    ws.connect(wsurl, timeout=20, origin=None, suppress_origin=True)
-    return ws
-
+CDP_BASE = os.environ.get('HEMLANE_CDP_URL', os.environ.get('BRAVE_CDP_URL', '')).rstrip('/')
+API_URL = 'https://api.hemlane.com/graphql/'
+UI_HOSTS = {'hemlane.com', 'www.hemlane.com', 'app.hemlane.com'}
+SECRET_HEADERS = {'authorization', 'cookie', 'x-csrf-token'}
+KEEP_HEADERS = SECRET_HEADERS | {'content-type', 'origin', 'referer', 'user-agent'}
 ENDPOINT_HINTS = {
-    'get-properties': 'properties',
-    'get-tenants': 'tenants',
-    'get-transactions': 'transactions',
-    'get-maintenance': 'maintenance',
+    'get-properties': 'properties', 'get-tenants': 'tenants',
+    'get-transactions': 'transactions', 'get-maintenance': 'maintenance',
     'send-tenant-reply': 'tenantGroupMessageAdd',
     'submit-referral': 'hubspotFormSubmission',
     'work-order-comment': 'workOrderCommentCreate',
     'maintenance-comment': 'maintenanceRequestCommentCreate',
-    'financials-recurring': 'recurringPaymentRequestsCursor',
-    'financials-transactions': 'transactionsNextCursor',
+    'financials-recurring': 'recurringPaymentRequests',
+    'financials-transactions': 'financialTransactions',
 }
 
-def main():
-    ap = argparse.ArgumentParser(description='Capture live Hemlane signed auth headers from direct Brave CDP.')
-    ap.add_argument('--target-id')
-    ap.add_argument('--endpoint-kind', choices=sorted(ENDPOINT_HINTS.keys()), default='get-properties')
-    ap.add_argument('--out-file')
-    ap.add_argument('--close-extra-tabs', action='store_true')
-    args = ap.parse_args()
 
-    ctx = {'targetId': args.target_id} if args.target_id else ensure_hemlane_cdp_context(close_extras=args.close_extra_tabs)
-    target_id = ctx['targetId']
-    ws = connect_ws(target_id)
-    msg_id = 0
+def is_hemlane_tab(url):
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == 'https' and parsed.hostname in UI_HOSTS
+                and parsed.port in (None, 443) and not parsed.username
+                and not parsed.password)
+    except (ValueError, TypeError):
+        return False
 
-    def send(method, params=None):
-        nonlocal msg_id
-        msg_id += 1
-        cid = msg_id
-        ws.send(json.dumps({'id': cid, 'method': method, 'params': params or {}}))
-        return cid
 
-    def recv_until_id(cid, timeout=20):
-        end = time.time() + timeout
-        events = []
-        while time.time() < end:
+def is_api_graphql(url):
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == 'https' and parsed.hostname == 'api.hemlane.com'
+                and parsed.port in (None, 443) and not parsed.username
+                and not parsed.password and parsed.path in ('/graphql', '/graphql/')
+                and not parsed.query and not parsed.fragment)
+    except (ValueError, TypeError):
+        return False
+
+
+def through_cdp_bridge(wsurl):
+    advertised = urlparse(wsurl)
+    bridge = urlparse(CDP_BASE)
+    if bridge.scheme not in ('http', 'https') or not bridge.hostname or bridge.username or bridge.password:
+        raise ValueError('Invalid CDP bridge configuration')
+    if not advertised.path.startswith('/devtools/page/'):
+        raise ValueError('Invalid page debugger target')
+    return urlunparse(('wss' if bridge.scheme == 'https' else 'ws',
+                      bridge.netloc, advertised.path, '', '', ''))
+
+
+def get_tabs():
+    bridge = urlparse(CDP_BASE)
+    if bridge.scheme not in ('http', 'https') or not bridge.hostname or bridge.username or bridge.password:
+        raise ValueError('Configure HEMLANE_CDP_URL for the existing authenticated browser')
+    with urlopen(f'{CDP_BASE}/json', timeout=20) as response:
+        return json.loads(response.read())
+
+
+def select_tab(tabs, target_id=None):
+    candidates = [tab for tab in tabs if tab.get('type') == 'page'
+                  and is_hemlane_tab(tab.get('url', ''))]
+    if target_id:
+        candidates = [tab for tab in candidates if tab.get('id') == target_id]
+    if not candidates:
+        raise ValueError('No existing Hemlane page target; no other tab was changed')
+    return candidates[0]
+
+
+def ensure_hemlane_cdp_context(close_extras=False):
+    # Retained for callers; this function intentionally never navigates tabs.
+    return {'targetId': select_tab(get_tabs())['id']}
+
+
+def normalize_headers(headers):
+    return {str(key).lower(): value for key, value in headers.items()
+            if str(key).lower() in KEEP_HEADERS and isinstance(value, str)}
+
+
+def select_captured_auth(events):
+    """Join ExtraInfo only to an explicitly observed API GraphQL request ID."""
+    requests = {}
+    extras = {}
+    redirected = set()
+    for event in events:
+        params = event.get('params', {})
+        request_id = params.get('requestId')
+        if not request_id:
+            continue
+        if event.get('method') == 'Network.requestWillBeSent':
+            request = params.get('request', {})
+            if request_id in requests or params.get('redirectResponse'):
+                redirected.add(request_id)
+            requests[request_id] = request
+        elif event.get('method') == 'Network.requestWillBeSentExtraInfo':
+            extras[request_id] = params.get('headers', {})
+    for request_id, request in reversed(list(requests.items())):
+        if (request_id in redirected or not is_api_graphql(request.get('url', ''))
+                or request.get('method') != 'POST'):
+            continue
+        headers = normalize_headers(request.get('headers', {}))
+        headers.update(normalize_headers(extras.get(request_id, {})))
+        if any(headers.get(key) for key in SECRET_HEADERS):
+            return headers, {'url': request['url'], 'method': request['method']}
+    return None, None
+
+
+def scoped_cookie_header(cookies):
+    # Network.getCookies is additionally restricted to API_URL by the caller.
+    allowed_domains = {'hemlane.com', '.hemlane.com', 'api.hemlane.com', '.api.hemlane.com'}
+    return '; '.join(f"{cookie['name']}={cookie['value']}" for cookie in cookies
+                     if cookie.get('domain') in allowed_domains
+                     and cookie.get('name') and isinstance(cookie.get('value'), str))
+
+
+def write_auth_exclusive(path, headers):
+    """Refuse existing files/symlinks; restrictive permissions apply at creation."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(os.fspath(path), flags, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, 'w') as output:
+        json.dump(headers, output, indent=2)
+        output.write('\n')
+
+
+def capture(args):
+    import websocket
+    # Fail before browser work if the destination already exists, including a
+    # dangling symlink. O_EXCL below closes the race with concurrent captures.
+    if os.path.lexists(args.out_file):
+        raise ValueError('Auth output already exists; choose a new private file')
+    tab = select_tab(get_tabs(), args.target_id)
+    ws = websocket.WebSocket()
+    events = []
+    sequence = 0
+
+    def command(method, params=None):
+        nonlocal sequence
+        sequence += 1
+        ws.send(json.dumps({'id': sequence, 'method': method, 'params': params or {}}))
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
             obj = json.loads(ws.recv())
-            if obj.get('id') == cid:
-                return obj, events
-            if 'method' in obj:
+            if obj.get('method'):
                 events.append(obj)
-        raise TimeoutError(f'timed out waiting for response id {cid}')
+            if obj.get('id') == sequence:
+                if obj.get('error'):
+                    raise ValueError('Browser capture command failed')
+                return obj.get('result', {})
+        raise TimeoutError('Browser capture command timed out')
 
-    def collect_events(seconds):
-        end = time.time() + seconds
-        events = []
-        while time.time() < end:
+    try:
+        ws.connect(through_cdp_bridge(tab['webSocketDebuggerUrl']), timeout=20,
+                   origin=None, suppress_origin=True)
+        command('Network.enable')
+        command('Page.reload', {'ignoreCache': False})
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            ws.settimeout(min(1, max(0.01, deadline - time.monotonic())))
             try:
-                ws.settimeout(1)
                 obj = json.loads(ws.recv())
-                if 'method' in obj:
+                if obj.get('method'):
                     events.append(obj)
-            except Exception:
+            except websocket.WebSocketTimeoutException:
                 pass
         ws.settimeout(20)
-        return events
+        headers, source = select_captured_auth(events)
+        if not headers:
+            cookies = command('Network.getCookies', {'urls': [API_URL]}).get('cookies', [])
+            cookie = scoped_cookie_header(cookies)
+            if cookie:
+                headers = {'cookie': cookie}
+                source = {'url': API_URL, 'method': 'POST'}
+        if not headers:
+            raise ValueError('No API-scoped Hemlane credentials captured')
+        headers.setdefault('content-type', 'application/json')
+        headers.setdefault('origin', 'https://www.hemlane.com')
+        headers.setdefault('referer', 'https://www.hemlane.com/')
+        write_auth_exclusive(args.out_file, headers)
+        return {'success': True, 'targetId': tab['id'], 'endpointKind': args.endpoint_kind,
+                'capturedUrl': source['url'], 'capturedMethod': source['method'],
+                'authFile': str(Path(args.out_file)),
+                'capturedHeaderNames': sorted(headers)}
+    finally:
+        ws.close()
 
-    send('Network.enable')
-    recv_until_id(msg_id, 5)
-    send('Runtime.enable')
-    recv_until_id(msg_id, 5)
 
-    hint = ENDPOINT_HINTS[args.endpoint_kind]
-    
-    # Inject request capture hook
-    hook = r'''(() => {
-      const key = '__hemlaneCapturedRequests';
-      sessionStorage.removeItem(key);
-      const keep = (entry) => {
-        try {
-          const cur = JSON.parse(sessionStorage.getItem(key) || '[]');
-          cur.push(entry);
-          sessionStorage.setItem(key, JSON.stringify(cur.slice(-100)));
-        } catch (e) {}
-      };
-      const hdrsToObj = (h) => {
-        const out = {};
-        if (!h) return out;
-        if (Array.isArray(h)) { for (const [k,v] of h) out[k] = v; }
-        else if (typeof Headers !== 'undefined' && h instanceof Headers) { for (const [k,v] of h.entries()) out[k] = v; }
-        else if (typeof h === 'object') { for (const k of Object.keys(h)) out[k] = h[k]; }
-        return out;
-      };
-      if (!window.__openclawHemlaneHooked) {
-        window.__openclawHemlaneHooked = true;
-        const origFetch = window.fetch;
-        window.fetch = async function(input, init) {
-          try {
-            const url = (typeof input === 'string') ? input : (input && input.url) || '';
-            const headers = hdrsToObj((init && init.headers) || (input && input.headers));
-            keep({type:'fetch', url, method:(init && init.method) || 'GET', headers, body:(init&&init.body)?String(init.body).slice(0,5000):''});
-          } catch (e) {}
-          return origFetch.apply(this, arguments);
-        };
-      }
-    })();'''
-    send('Runtime.evaluate', {'expression': hook})
-    recv_until_id(msg_id, 5)
-
-    # Trigger a GraphQL request by navigating or clicking
-    # For get-properties, navigate to property-owners page
-    if args.endpoint_kind == 'get-properties':
-        send('Page.navigate', {'url': 'https://www.hemlane.com/property-owners'})
-        recv_until_id(msg_id, 30)
-        time.sleep(3)
-    elif args.endpoint_kind in ('financials-recurring', 'financials-transactions'):
-        target_url = 'https://www.hemlane.com/dashboards/owner/financials/recurring' if args.endpoint_kind == 'financials-recurring' else 'https://www.hemlane.com/dashboards/owner/financials/transactions'
-        send('Page.navigate', {'url': target_url})
-        recv_until_id(msg_id, 30)
-        time.sleep(5)
-    
-    # Collect captured requests
-    time.sleep(2)
-    resp = send('Runtime.evaluate', {'expression': "JSON.parse(sessionStorage.getItem('__hemlaneCapturedRequests') || '[]')", 'returnByValue': True})
-    data, _ = recv_until_id(resp, 10)
-    arr = data['result']['result'].get('value', [])
-    
-    headers = None
-    source = None
-    for x in reversed(arr):
-        h = {k.lower(): v for k, v in (x.get('headers') or {}).items()}
-        url = x.get('url', '')
-        # Look for GraphQL requests to api.hemlane.com
-        if 'api.hemlane.com' in url and '/graphql' in url:
-            headers = h
-            source = x
-            break
-    
-    if not headers:
-        # Try to get from Network events
-        events = collect_events(3)
-        for e in events:
-            if e.get('method') == 'Network.requestWillBeSentExtraInfo':
-                h = {k.lower(): v for k, v in (e.get('params', {}).get('headers') or {}).items()}
-                url = e.get('params', {}).get('headers', {}).get(':path', '')
-                if 'graphql' in url:
-                    headers = h
-                    source = {'url': url, 'method': h.get(':method', 'POST')}
-                    break
-    
-    # Browser cookies are often omitted from fetch init headers and HAR exports.
-    cookie_header = None
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--target-id')
+    parser.add_argument('--endpoint-kind', choices=sorted(ENDPOINT_HINTS), default='get-properties')
+    parser.add_argument('--out-file', required=True)
+    # Compatibility: never close unrelated tabs, even if older callers send it.
+    parser.add_argument('--close-extra-tabs', action='store_true', help=argparse.SUPPRESS)
+    args = parser.parse_args()
     try:
-        cid = send('Network.getCookies', {'urls': ['https://www.hemlane.com', 'https://api.hemlane.com']})
-        cookie_resp, _ = recv_until_id(cid, 10)
-        cookies = cookie_resp.get('result', {}).get('cookies', [])
-        if cookies:
-            cookie_header = '; '.join([c.get('name','') + '=' + c.get('value','') for c in cookies if c.get('name')])
-    except Exception:
-        pass
+        print(json.dumps(capture(args), indent=2))
+    except Exception as exc:
+        # Browser/HTTP exceptions can contain request headers, URLs, or bodies.
+        print(json.dumps({'error': 'auth_capture_failed', 'errorType': type(exc).__name__,
+                          'message': 'No credentials printed. Check target, private output path, and canonical browser bridge.'}))
+        raise SystemExit(1)
 
-    if not headers:
-        headers = {}
-        source = {'url': None, 'method': 'POST'}
-    if not headers and not cookie_header:
-        raise SystemExit(f'Did not capture Hemlane auth/cookie headers for {args.endpoint_kind}')
-    
-    out_headers = {
-        'authorization': headers.get('authorization'),
-        'x-csrf-token': headers.get('x-csrf-token'),
-        'content-type': headers.get('content-type', 'application/json'),
-        'origin': headers.get('origin', 'https://www.hemlane.com'),
-        'referer': headers.get('referer', 'https://www.hemlane.com/'),
-        'user-agent': headers.get('user-agent', 'Mozilla/5.0 OpenClaw Hemlane Skill'),
-    }
-    # Include cookies if captured
-    if headers.get('cookie'):
-        out_headers['cookie'] = headers['cookie']
-    elif cookie_header:
-        out_headers['cookie'] = cookie_header
-    
-    out = {
-        'targetId': target_id,
-        'endpointKind': args.endpoint_kind,
-        'capturedUrl': source.get('url') if source else None,
-        'capturedMethod': source.get('method') if source else None,
-        'headers': out_headers,
-    }
-    
-    if args.out_file:
-        Path(args.out_file).write_text(json.dumps(out['headers'], indent=2))
-    print(json.dumps(out, indent=2))
-    ws.close()
 
 if __name__ == '__main__':
     main()

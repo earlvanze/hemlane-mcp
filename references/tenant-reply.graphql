@@ -4,13 +4,6 @@ mutation ODProspectiveTenantGroupMessageCreate($input: TenantGroupMessageAdd2Inp
       id
       body
       createdAt
-      createdByInfo {
-        id
-        name
-        email
-        type
-        __typename
-      }
       __typename
     }
     errors {

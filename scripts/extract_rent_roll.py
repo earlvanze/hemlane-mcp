@@ -50,6 +50,8 @@ def extract_rent_roll(auth_headers, output_path=None):
     - auth_headers: dict with cookies, x-csrf-token, etc.
     - output_path: optional path to save JSON output
     """
+    raise RuntimeError('rent_roll_contract_unverified_use_native_paginated_queries')
+
     import requests
     
     endpoint = "https://app.hemlane.com/graphql"
@@ -82,6 +84,8 @@ def main():
     parser.add_argument('--output', '-o', help='Output JSON path')
     parser.add_argument('--auth-file', help='JSON file with auth headers')
     args = parser.parse_args()
+    print(json.dumps({'error': 'rent_roll_contract_unverified_use_native_paginated_queries'}))
+    return 2
     
     auth_headers = {}
     if args.auth_file:
@@ -92,4 +96,4 @@ def main():
     print(json.dumps(result, indent=2))
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

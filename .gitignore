@@ -1,6 +1,11 @@
 *.har
-*.pyc
-__pycache__/
 private/
 *.auth.json
 *auth*.json
+
+# Local credentials and generated Python files
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
